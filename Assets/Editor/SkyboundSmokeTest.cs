@@ -111,6 +111,17 @@ namespace Skybound.Editor
                         Fail("World did not spawn content.");
                         return;
                     }
+                    // BUG 1 regression: the main menu must never be visible during a run.
+                    if (game.UI.MenuVisible)
+                    {
+                        Fail("Main menu is still visible during gameplay.");
+                        return;
+                    }
+                    if (!game.UI.HudVisible)
+                    {
+                        Fail("HUD is not visible during gameplay.");
+                        return;
+                    }
                     Debug.Log("[Smoke] Run active. distance=" + game.Distance.ToString("0") +
                               " speed=" + game.WorldSpeed.ToString("0.0") +
                               " score=" + game.Score.Score);
@@ -120,6 +131,7 @@ namespace Skybound.Editor
                         Fail("Pause failed.");
                         return;
                     }
+                    if (game.UI.MenuVisible) { Fail("Main menu visible while paused."); return; }
                     game.ResumeGame();
                     if (game.State != GameState.Playing || Time.timeScale != 1f)
                     {
@@ -134,23 +146,78 @@ namespace Skybound.Editor
 
                 case 2:
                     if (Elapsed() < 2.5f) return;
+                    // Guarantee the player can afford a revive so this exercises the
+                    // click path rather than the "not enough coins" branch.
+                    SaveManager.Instance.Data.Coins = Mathf.Max(SaveManager.Instance.Data.Coins, game.ReviveCost + 500);
+                    int coinsBeforeRevive = SaveManager.Instance.Data.Coins;
+
                     game.OnPlayerCaught();
                     if (game.State != GameState.GameOver)
                     {
                         Fail("Game-over state not reached.");
                         return;
                     }
-                    if (!game.CanRevive && game.WalletCoins >= game.ReviveCost)
+                    if (game.UI.MenuVisible) { Fail("Main menu still visible on the CAUGHT screen."); return; }
+                    if (game.UI.HudVisible) { Fail("HUD still visible on the CAUGHT screen."); return; }
+                    if (!game.UI.ReviveVisible) { Fail("Revive screen is not visible."); return; }
+                    if (!game.CanRevive) { Fail("CanRevive returned false with enough coins."); return; }
+
+                    // BUG 2 regression: the revive and give-up buttons must be reachable
+                    // by a real pointer raycast, not covered by a full-screen dimmer.
+                    if (!game.UI.ReviveButtonReceivesClicks())
                     {
-                        Fail("CanRevive returned false with enough coins.");
+                        Fail("REVIVE button is covered and cannot receive clicks.");
                         return;
                     }
-                    game.DeclineRevive();
+                    if (!game.UI.GiveUpButtonReceivesClicks())
+                    {
+                        Fail("GIVE UP button is covered and cannot receive clicks.");
+                        return;
+                    }
+
+                    game.UI.ClickRevive();
+                    if (game.State != GameState.Playing)
+                    {
+                        Fail("REVIVE click did not resume the run. State=" + game.State);
+                        return;
+                    }
+                    if (SaveManager.Instance.Data.Coins != coinsBeforeRevive - game.ReviveCost)
+                    {
+                        Fail("REVIVE did not charge " + game.ReviveCost + " coins.");
+                        return;
+                    }
+                    if (!game.UI.HudVisible) { Fail("HUD not visible after revive."); return; }
+                    if (game.UI.MenuVisible || game.UI.ReviveVisible)
+                    {
+                        Fail("Menu or revive screen still visible after revive.");
+                        return;
+                    }
+                    Debug.Log("[Smoke] Revive clicked: coins " + coinsBeforeRevive + " -> " +
+                              SaveManager.Instance.Data.Coins + ", run resumed.");
+                    NextStage();
+                    break;
+
+                case 3:
+                    if (Elapsed() < 2.5f) return;
+                    // Second catch: only one revive is allowed per run, so GIVE UP must work.
+                    game.OnPlayerCaught();
+                    if (game.State != GameState.GameOver) { Fail("Second game-over not reached."); return; }
+                    if (!game.UI.ReviveVisible) { Fail("Revive screen not visible on second catch."); return; }
+                    if (game.CanRevive) { Fail("CanRevive should be false after a revive."); return; }
+                    if (!game.UI.GiveUpButtonReceivesClicks())
+                    {
+                        Fail("GIVE UP button is covered on the second catch.");
+                        return;
+                    }
+
+                    game.UI.ClickGiveUp();
                     if (!game.RunFinalized || game.PendingSummary == null)
                     {
-                        Fail("Run was not finalised after declining revive.");
+                        Fail("Run was not finalised after clicking GIVE UP.");
                         return;
                     }
+                    if (!game.UI.ResultsVisible) { Fail("Results screen not visible after GIVE UP."); return; }
+                    if (game.UI.ReviveVisible) { Fail("Revive screen still visible after GIVE UP."); return; }
                     Debug.Log("[Smoke] Results: score=" + game.PendingSummary.Score +
                               " coins=" + game.PendingSummary.CoinCount +
                               " distance=" + game.PendingSummary.Distance.ToString("0") +
@@ -158,7 +225,7 @@ namespace Skybound.Editor
                     NextStage();
                     break;
 
-                case 3:
+                case 4:
                     if (Elapsed() < 1f) return;
                     game.QuitToMenu();
                     if (game.State != GameState.Menu)
@@ -166,6 +233,7 @@ namespace Skybound.Editor
                         Fail("Quit to menu failed.");
                         return;
                     }
+                    if (!game.UI.MenuVisible) { Fail("Main menu is not visible after quitting to menu."); return; }
                     // Verify shop / level / mission / achievement screens build without exceptions.
                     game.UI.ShowShop(true);
                     game.UI.ShowShop(false);
@@ -181,7 +249,7 @@ namespace Skybound.Editor
                     NextStage();
                     break;
 
-                case 4:
+                case 5:
                     if (Elapsed() < 0.5f) return;
                     stage = 90;
                     EditorApplication.isPlaying = false;
@@ -243,7 +311,7 @@ namespace Skybound.Editor
             }
 
             if (success)
-                Debug.Log("[Smoke] PASS: boot, run, pause, resume, revive-decline, results and all menus verified.");
+                Debug.Log("[Smoke] PASS: boot, menu hiding, run, pause, revive click, give-up, results and all menus verified.");
             else
                 Debug.LogError("[Smoke] FAILED.");
 

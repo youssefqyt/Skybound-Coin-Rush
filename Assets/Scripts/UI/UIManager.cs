@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace Skybound
@@ -59,6 +60,7 @@ namespace Skybound
         private TextMeshProUGUI reviveCoins;
         private TextMeshProUGUI reviveStats;
         private Button reviveButton;
+        private Button giveUpButton;
 
         private TextMeshProUGUI resultsTitle;
         private TextMeshProUGUI resultsSubtitle;
@@ -458,7 +460,6 @@ namespace Skybound
             RectTransform panel;
             Chain chain = Overlay("ReviveScreen", new Vector2(860f, 600f), new Color(0.07f, 0.08f, 0.14f, 0.99f), out panel);
             reviveScreen = chain.Screen;
-            UIFactory.Dim(reviveScreen, 0.55f);
 
             UIFactory.Sprite(panel, Art.Glow(), new Vector2(0.5f, 1f), new Vector2(0.5f, 0.5f),
                 new Vector2(0f, -26f), new Vector2(520f, 260f), new Color(1f, 0.15f, 0.2f, 0.18f));
@@ -481,7 +482,7 @@ namespace Skybound
             reviveButton = UIFactory.Button(panel, "Revive", "REVIVE  •  150", Palette.Success, Color.white,
                 new Vector2(0.5f, 0.5f), new Vector2(0f, 8f), new Vector2(520f, 84f),
                 game.Revive, "coin", 30f);
-            UIFactory.Button(panel, "GiveUp", "GIVE UP", new Color(0.12f, 0.1f, 0.16f, 1f), Palette.Muted,
+            giveUpButton = UIFactory.Button(panel, "GiveUp", "GIVE UP", new Color(0.12f, 0.1f, 0.16f, 1f), Palette.Muted,
                 new Vector2(0.5f, 0.5f), new Vector2(0f, -92f), new Vector2(360f, 58f),
                 game.DeclineRevive, null, 22f);
 
@@ -791,8 +792,137 @@ namespace Skybound
             RefreshMenu();
         }
 
+        /// <summary>Hides the main menu so it cannot cover gameplay or swallow taps.</summary>
+        public void HideMenu()
+        {
+            if (menuScreen != null) menuScreen.gameObject.SetActive(false);
+        }
+
+        // ------------------------------------------------------- SCREEN STATE API
+
+        public bool MenuVisible { get { return menuScreen != null && menuScreen.gameObject.activeSelf; } }
+        public bool HudVisible { get { return hudScreen != null && hudScreen.gameObject.activeSelf; } }
+        public bool ReviveVisible { get { return reviveScreen != null && reviveScreen.gameObject.activeSelf; } }
+        public bool ResultsVisible { get { return resultsScreen != null && resultsScreen.gameObject.activeSelf; } }
+
+        /// <summary>True when a real pointer raycast reaches the revive button.</summary>
+        public bool ReviveButtonReceivesClicks()
+        {
+            return IsTopmostAt(reviveButton);
+        }
+
+        /// <summary>True when a real pointer raycast reaches the give-up button.</summary>
+        public bool GiveUpButtonReceivesClicks()
+        {
+            return IsTopmostAt(giveUpButton);
+        }
+
+        public void ClickRevive()
+        {
+            if (reviveButton != null && reviveButton.interactable) reviveButton.onClick.Invoke();
+        }
+
+        public void ClickGiveUp()
+        {
+            if (giveUpButton != null && giveUpButton.interactable) giveUpButton.onClick.Invoke();
+        }
+
+        private static bool IsTopmostAt(Button button)
+        {
+            if (button == null || !button.gameObject.activeInHierarchy) return false;
+            if (EventSystem.current == null) return false;
+
+            RectTransform rt = (RectTransform)button.transform;
+            Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(null, rt.position);
+
+            // In -nographics batch mode Unity never builds the canvas, so every
+            // Graphic has depth -1 and GraphicRaycaster skips it. Fall back to a
+            // structural occlusion test that mirrors what the raycaster would do.
+            if (!RaycastReady(button))
+                return !HasOccluder(button, screenPoint);
+
+            PointerEventData eventData = new PointerEventData(EventSystem.current) { position = screenPoint };
+            List<RaycastResult> hits = new List<RaycastResult>();
+            EventSystem.current.RaycastAll(eventData, hits);
+
+            if (hits.Count == 0)
+            {
+                Debug.LogWarning("[UI] Raycast hit nothing at " + screenPoint + " for " + button.name +
+                                 "; using structural test.");
+                return !HasOccluder(button, screenPoint);
+            }
+
+            Transform hit = hits[0].gameObject.transform;
+            while (hit != null)
+            {
+                if (hit == button.transform) return true;
+                hit = hit.parent;
+            }
+
+            Debug.LogWarning("[UI] Top raycast at " + screenPoint + " is '" + hits[0].gameObject.name +
+                             "', not " + button.name);
+            return false;
+        }
+
+        /// <summary>True when the canvas has been processed and real raycasts work.</summary>
+        private static bool RaycastReady(Button button)
+        {
+            Canvas canvas = button.GetComponentInParent<Canvas>();
+            if (canvas == null) return false;
+            IList<Graphic> list = GraphicRegistry.GetRaycastableGraphicsForCanvas(canvas);
+            if (list == null) return false;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i] != null && list[i].depth >= 0) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// Walks the canvas hierarchy in draw order and reports any raycast-blocking
+        /// graphic drawn after the button whose rect covers the button centre.
+        /// </summary>
+        private static bool HasOccluder(Button button, Vector2 screenPoint)
+        {
+            Canvas canvas = button.GetComponentInParent<Canvas>();
+            if (canvas == null) return true;
+
+            List<Transform> order = new List<Transform>();
+            CollectDrawOrder(canvas.transform, order);
+            int buttonIndex = order.IndexOf(button.transform);
+
+            Graphic[] graphics = canvas.GetComponentsInChildren<Graphic>(false);
+            for (int i = 0; i < graphics.Length; i++)
+            {
+                Graphic graphic = graphics[i];
+                if (graphic == null || !graphic.raycastTarget || !graphic.isActiveAndEnabled) continue;
+
+                Transform t = graphic.transform;
+                if (t == button.transform || t.IsChildOf(button.transform)) continue;
+                if (button.transform.IsChildOf(t)) continue;
+
+                int index = order.IndexOf(t);
+                if (index <= buttonIndex) continue;
+
+                if (RectTransformUtility.RectangleContainsScreenPoint(graphic.rectTransform, screenPoint, null))
+                {
+                    Debug.LogWarning("[UI] '" + graphic.gameObject.name + "' is drawn over " +
+                                     button.name + " and would swallow the tap.");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static void CollectDrawOrder(Transform parent, List<Transform> order)
+        {
+            order.Add(parent);
+            for (int i = 0; i < parent.childCount; i++)
+                CollectDrawOrder(parent.GetChild(i), order);
+        }
+
         public void ShowHUD(bool show)
         {
+            if (show) HideMenu();
+            else HideTutorial();
             hudScreen.gameObject.SetActive(show);
             if (show) RefreshHUDStatic();
             if (!show)
@@ -804,18 +934,26 @@ namespace Skybound
 
         public void ShowPause(bool show)
         {
-            if (show) HideTutorial();
+            if (show)
+            {
+                HideMenu();
+                HideTutorial();
+            }
             pauseScreen.gameObject.SetActive(show);
         }
 
         public void ShowReviveOffer()
         {
+            HideMenu();
+            HideTutorial();
             reviveScreen.gameObject.SetActive(true);
             RefreshRevive();
         }
 
         public void ShowRunResults(RunSummary summary, bool levelComplete)
         {
+            HideMenu();
+            HideTutorial();
             reviveScreen.gameObject.SetActive(false);
             resultsScreen.gameObject.SetActive(true);
 
@@ -1081,7 +1219,11 @@ namespace Skybound
             reviveButton.interactable = can;
             TextMeshProUGUI label = reviveButton.GetComponentInChildren<TextMeshProUGUI>();
             if (label != null)
-                label.text = can ? "REVIVE  •  " + game.ReviveCost : "NEED " + game.ReviveCost + " COINS";
+            {
+                if (game.RevivedThisRun) label.text = "NO REVIVES LEFT";
+                else if (!can) label.text = "NEED " + game.ReviveCost + " COINS";
+                else label.text = "REVIVE  •  " + game.ReviveCost;
+            }
         }
 
         // --------------------------------------------------------------- SETTINGS
