@@ -480,9 +480,12 @@ survives the play-mode transition, then restores the setting.
 - Staged boot completes and `GameManager.IsBuilt` becomes true.
 - Save data and audio services exist.
 - Distance, speed and score advance during a run.
+- The main menu is hidden while a run is active and while paused.
 - Pause freezes `Time.timeScale`, resume restores it.
 - Lane change, jump and slide are accepted.
-- Game-over transitions to the revive offer; declining finalises the run and produces results.
+- Game-over transitions to the revive offer; the REVIVE and GIVE UP buttons are not
+  covered by an overlay, clicking REVIVE resumes the run and charges the coin cost,
+  and clicking GIVE UP after the one allowed revive finalises the run and shows results.
 - The shop, level select, missions, achievements and settings screens all build and rebuild
   without exceptions.
 
