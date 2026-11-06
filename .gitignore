@@ -1,0 +1,65 @@
+# ---------------------------------------------------------------------------
+# Unity generated folders - never commit these
+# ---------------------------------------------------------------------------
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/.utmp/
+
+# Unity crash / diagnostic files
+sysinfo.txt
+crashlytics-build.properties
+*.stackdump
+*.log
+
+# ---------------------------------------------------------------------------
+# Build output and deliverables (the APK is published under GitHub Releases)
+# ---------------------------------------------------------------------------
+/Builds/
+*.apk
+*.aab
+*.ipa
+*_BackUpThisFolder_ButDontShipItWithYourGame/
+*_BurstDebugInformation_DoNotShip/
+
+# ---------------------------------------------------------------------------
+# IDEs and generated project files
+# ---------------------------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.vsconfig
+*.DotSettings.user
+
+# ---------------------------------------------------------------------------
+# OS junk
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Local scratch files
+# ---------------------------------------------------------------------------
+*.tmp
+*.bak
