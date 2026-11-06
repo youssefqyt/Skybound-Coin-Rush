@@ -452,8 +452,8 @@ Unity also creates a sibling folder named
 ## 🧪 Testing
 
 A headless play-mode smoke test boots the generated scene, starts a run, exercises pause /
-resume, input, forced game over, revive decline, results and every menu screen, and fails on
-any runtime exception.
+resume, input, forced game over, revive decline, lane-change collision fairness, results and
+every menu screen, and fails on any runtime exception.
 
 ```powershell
 & $unity -batchmode -nographics `
@@ -468,6 +468,8 @@ Expected log:
 [Smoke] Boot OK ...
 [Smoke] Run active ...
 [Smoke] Results ...
+[Smoke] Lane-change forgiveness OK: no damage while leaving the hazard lane.
+[Smoke] Same-lane collision still registers (hits=1).
 [Smoke] Menu and all overlay screens built successfully.
 [Smoke] PASS ...
 ```
@@ -483,6 +485,9 @@ survives the play-mode transition, then restores the setting.
 - The main menu is hidden while a run is active and while paused.
 - Pause freezes `Time.timeScale`, resume restores it.
 - Lane change, jump and slide are accepted.
+- **Lane-change fairness:** a hazard pinned at the collision plane cannot damage the player
+  once a swipe has committed them to a different lane, while a hazard in the player's own
+  committed lane still deals exactly one point of hull damage.
 - Game-over transitions to the revive offer; the REVIVE and GIVE UP buttons are not
   covered by an overlay, clicking REVIVE resumes the run and charges the coin cost,
   and clicking GIVE UP after the one allowed revive finalises the run and shows results.

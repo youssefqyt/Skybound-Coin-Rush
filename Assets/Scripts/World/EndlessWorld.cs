@@ -21,6 +21,12 @@ namespace Skybound
         public int ActiveCoins { get { return coins.Count; } }
         public float Difficulty01 { get { return difficulty; } }
 
+        /// <summary>
+        /// Test hook: disables automatic pattern/power-up spawns so a scenario can be
+        /// driven deterministically. Gameplay never toggles this.
+        /// </summary>
+        public bool SpawningEnabled { get; set; } = true;
+
         private const float SpawnZ = 155f;
         private const float DespawnZ = -14f;
 
@@ -141,12 +147,12 @@ namespace Skybound
                 spawnCounter += move;
                 powerTimer -= deltaTime;
 
-                if (spawnCounter >= spawnInterval)
+                if (SpawningEnabled && spawnCounter >= spawnInterval)
                 {
                     spawnCounter -= spawnInterval;
                     SpawnPattern();
                 }
-                if (powerTimer <= 0f)
+                if (SpawningEnabled && powerTimer <= 0f)
                 {
                     powerTimer = UnityEngine.Random.Range(22f, 34f);
                     SpawnPowerUp();
@@ -183,7 +189,12 @@ namespace Skybound
             if (!obstacle.Passed && obstacle.Z <= obstacle.Depth && obstacle.Z >= -obstacle.Depth)
             {
                 float laneDistance = Mathf.Abs(obstacle.WorldX - player.VisualX);
-                bool sameLane = laneDistance < 1.15f;
+                // The committed lane (updated the instant a swipe is registered) is
+                // authoritative. VisualX trails the swipe by the smooth lane-slide,
+                // and GameManager ticks the world one frame before PlayerController
+                // moves the player, so a purely positional test used to damage the
+                // player while they were already sliding into a different lane.
+                bool sameLane = obstacle.Lane == player.Lane && laneDistance < 1.15f;
                 if (sameLane)
                 {
                     bool hit = WouldHit(obstacle, player);
@@ -408,16 +419,17 @@ namespace Skybound
 
         private void GapRow()
         {
+            // Number of lanes that become holes; at least one lane always stays open.
             int gaps = difficulty > 0.55f ? 2 : 1;
             int open = rng.Next(0, GameConfig.LaneCount);
-            for (int lane = 0; lane < GameConfig.LaneCount; lane++)
+            int spawned = 0;
+            for (int lane = 0; lane < GameConfig.LaneCount && spawned < gaps; lane++)
             {
-                if (lane == open && gaps < 3) continue;
+                if (lane == open) continue;
                 SpawnObstacle(ObstacleKind.Gap, lane, SpawnZ);
+                spawned++;
             }
             SpawnCoinLine(open, SpawnZ - 4f, rng.Next(4, 8), 1.8f, 0.9f, false);
-            if (gaps >= 3)
-                SpawnCoinLine(open, SpawnZ + 2f, 5, 1.7f, 1.5f, true);
         }
 
         private void CoinLine()
@@ -515,6 +527,13 @@ namespace Skybound
         public void SpawnTutorialRow(ObstacleKind kind, int lane)
         {
             SpawnObstacle(kind, lane, 34f);
+        }
+
+        /// <summary>Test hook: spawns one hazard at an exact depth and returns it.</summary>
+        public Obstacle SpawnTestObstacle(ObstacleKind kind, int lane, float z)
+        {
+            SpawnObstacle(kind, lane, z);
+            return obstacles[obstacles.Count - 1];
         }
 
         public void SpawnTutorialCoins(int lane, int count)

@@ -19,6 +19,7 @@ namespace Skybound.Editor
         private static readonly StringBuilder errors = new StringBuilder();
         private static bool hooked;
         private static float lastBeat;
+        private static bool laneChangeRequested;
 
         public static void Run()
         {
@@ -250,7 +251,62 @@ namespace Skybound.Editor
                     break;
 
                 case 5:
-                    if (Elapsed() < 0.5f) return;
+                    // Fresh run for the lane-change collision regression.
+                    game.StartEndlessRun();
+                    game.World.SpawningEnabled = false;
+                    game.World.ClearAll();
+                    laneChangeRequested = false;
+                    NextStage();
+                    break;
+
+                case 6:
+                    // Let the post-spawn invulnerability expire with no hazards around.
+                    game.World.ClearAll();
+                    if (Elapsed() < 1.45f) return;
+                    NextStage();
+                    break;
+
+                case 7:
+                    // BUG 3 regression: swiping out of a lane that already contains a
+                    // hazard must not cost a heart while the smooth slide is in flight.
+                    // The hazard is pinned at z = 0 and respawned every frame.
+                    game.World.ClearAll();
+                    if (!laneChangeRequested)
+                    {
+                        laneChangeRequested = true;
+                        game.Player.Input.PerformLane(-1); // lane 1 -> lane 0
+                    }
+                    if (game.Player.Lane != 0)
+                    {
+                        Fail("Lane request did not commit (lane=" + game.Player.Lane + ").");
+                        return;
+                    }
+                    game.World.SpawnTestObstacle(ObstacleKind.Block, 1, 0f);
+                    if (Elapsed() < 0.75f) return;
+                    if (game.Player.Hits != 0)
+                    {
+                        Fail("Phantom hit: player took damage (hits=" + game.Player.Hits +
+                             ") while leaving the hazard lane.");
+                        return;
+                    }
+                    Debug.Log("[Smoke] Lane-change forgiveness OK: no damage while leaving the hazard lane.");
+                    NextStage();
+                    break;
+
+                case 8:
+                    // Positive control: a hazard inside the committed lane must still hurt.
+                    if (Elapsed() < 1.2f) return;
+                    game.World.ClearAll();
+                    game.World.SpawnTestObstacle(ObstacleKind.Block, 0, 0.2f);
+                    if (Elapsed() < 1.55f) return;
+                    if (game.Player.Hits < 1)
+                    {
+                        Fail("Collision never registered for a hazard inside the player's own lane.");
+                        return;
+                    }
+                    Debug.Log("[Smoke] Same-lane collision still registers (hits=" + game.Player.Hits + ").");
+                    game.World.SpawningEnabled = true;
+                    game.World.ClearAll();
                     stage = 90;
                     EditorApplication.isPlaying = false;
                     break;
